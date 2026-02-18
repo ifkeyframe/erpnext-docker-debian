@@ -7,13 +7,13 @@
 FROM pipech/erpnext-docker-debian:version-15-latest AS builder
 
 # These variable has been set from base image
-# $systemUser, $benchFolderName
-USER $systemUser
-WORKDIR /home/$systemUser/$benchFolderName
+# frappe, frappe-bench
+USER frappe
+WORKDIR /home/frappe/frappe-bench
 
 RUN echo "-> Start builder" \
     ### remove unused sites, created by base image
-    && rm -rf /home/$systemUser/$benchFolderName/sites/site1.local \
+    && rm -rf /home/frappe/frappe-bench/sites/site1.local \
     ### [HOTFIX] Railway used IPv6 (Does not support IPv4),  https://docs.railway.com/guides/private-networking#caveats
     ### https://github.com/frappe/frappe/issues/33981
     && sed -i 's/socket\.AF_INET, socket\.SOCK_STREAM/socket.AF_INET6, socket.SOCK_STREAM/g' /home/frappe/bench/apps/frappe/frappe/utils/connections.py \
@@ -33,18 +33,18 @@ FROM frappe/bench:v5.22.9
 
 # this env should match stage 01
 # (Check pipech/erpnext-docker-debian Dockerfile)
-ENV systemUser=frappe
-ENV benchFolderName=bench
+ENV SYSTEM_USER=frappe
+ENV BENCH_FOLDER_NAME=bench
 
 # Copied bench folder from build stage
-COPY --from=builder --chown=$systemUser /home/$systemUser/$benchFolderName /home/$systemUser/$benchFolderName
+COPY --from=builder --chown=frappe /home/frappe/frappe-bench /home/frappe/frappe-bench
 
 # Copy template
-COPY /railway/temp_nginx.conf /home/$systemUser/temp_nginx.conf
-COPY /railway/temp_supervisor.conf /home/$systemUser/temp_supervisor.conf
+COPY /railway/temp_nginx.conf /home/frappe/temp_nginx.conf
+COPY /railway/temp_supervisor.conf /home/frappe/temp_supervisor.conf
 
 USER root
-WORKDIR /home/$systemUser/$benchFolderName
+WORKDIR /home/frappe/frappe-bench
 
 # [fix] "debconf: unable to initialize frontend: Dialog"
 # https://github.com/moby/moby/issues/27988
@@ -64,12 +64,12 @@ RUN echo "-> Install nginx & supervisor" \
     && echo "-> Remove nginx default site" \
     && rm /etc/nginx/sites-enabled/default \
     && echo "-> Rebuilding bench" \
-    && su $systemUser -c "bench build" \
-    && su $systemUser -c "cp -r /home/$systemUser/$benchFolderName/sites /home/$systemUser/$benchFolderName/built_sites"
+    && su frappe -c "bench build" \
+    && su frappe -c "cp -r /home/frappe/frappe-bench/sites /home/frappe/frappe-bench/built_sites"
 
-COPY --chown=$systemUser --chmod=0755 /railway/railway-setup.sh /home/$systemUser/$benchFolderName/railway-setup.sh
-COPY --chown=$systemUser --chmod=0755 /railway/railway-entrypoint.sh /usr/local/bin/railway-entrypoint.sh
-COPY --chown=$systemUser --chmod=0755 /railway/railway-cmd.sh /usr/local/bin/railway-cmd.sh
+COPY --chown=frappe --chmod=0755 /railway/railway-setup.sh /home/frappe/frappe-bench/railway-setup.sh
+COPY --chown=frappe --chmod=0755 /railway/railway-entrypoint.sh /usr/local/bin/railway-entrypoint.sh
+COPY --chown=frappe --chmod=0755 /railway/railway-cmd.sh /usr/local/bin/railway-cmd.sh
 
 ENTRYPOINT ["/usr/local/bin/railway-entrypoint.sh"]
 CMD ["/usr/local/bin/railway-cmd.sh"]

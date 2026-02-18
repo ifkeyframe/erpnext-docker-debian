@@ -8,4 +8,4 @@ collation-server = utf8mb4_unicode_ci
 skip-character-set-client-handshake
 
 # InnoDB settings
-skip-innodb-read-only-compressed
+skip-innodb-read-only-

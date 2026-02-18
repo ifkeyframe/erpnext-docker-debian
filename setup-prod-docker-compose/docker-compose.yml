@@ -1,0 +1,116 @@
+x-frappe-base: &frappe-base
+  build:
+    context: ./frappe
+    dockerfile: Dockerfile
+  restart: unless-stopped
+  env_file: .env
+  volumes:
+    - frappe-sites-data:/home/frappe/bench/sites
+    - frappe-logs-data:/home/frappe/bench/logs
+  networks:
+    - bench-network
+  depends_on:
+    fp-database:
+      condition: service_healthy
+    fp-redis-cache:
+      condition: service_healthy
+    fp-redis-queue:
+      condition: service_healthy
+
+x-redis: &redis
+  image: redis:6.2-alpine
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD", "redis-cli", "--raw", "incr", "ping_test"]
+    start_period: 5s
+    interval: 5s
+    timeout: 5s
+    retries: 5
+  networks:
+    - bench-network
+
+services:
+  fp-web:
+    <<: *frappe-base
+
+  fp-websocket:
+    <<: *frappe-base
+    command:
+      - node
+      - /home/frappe/frappe-bench/apps/frappe/socketio.js
+
+  fp-worker-short:
+    <<: *frappe-base
+    command:
+      - bench
+      - worker
+      - --queue
+      - short,default
+
+  fp-worker-long:
+    <<: *frappe-base
+    command:
+      - bench
+      - worker
+      - --queue
+      - long,default,short
+
+  fp-schedule:
+    <<: *frappe-base
+    command:
+      - bench
+      - schedule
+
+  fp-redis-cache:
+    <<: *redis
+
+  fp-redis-queue:
+    <<: *redis
+    volumes:
+      - redis-queue-data:/data
+
+  fp-nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+      additional_contexts:
+        frappe-image: "service:fp-web"
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "80:80"
+    volumes:
+      - frappe-sites-data:/home/frappe/bench/sites
+      - ./nginx.conf.template:/etc/nginx/templates/default.conf.template
+
+
+  fp-database:
+    image: mariadb:11.8
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+      - --skip-innodb-read-only-compressed
+    environment:
+      MARIADB_ROOT_PASSWORD: ${RFP_DB_ROOT_PASSWORD}
+      MARIADB_AUTO_UPGRADE: 1
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      start_period: 5s
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - bench-network
+
+volumes:
+  mariadb-data:
+  redis-queue-data:
+  frappe-sites-data:
+  frappe-logs-data:
+
+networks:
+  bench-network:

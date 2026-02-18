@@ -1,50 +1,43 @@
-FROM frappe/bench:v5.29.0
-# https://github.com/frappe/frappe_docker/blob/bc254c2b4ceb9d01dbdd598ace2053326120d27f/images/bench/Dockerfile
-# frappe/bench use debian:bookworm-slim as a base image
-# then it install dependencies for bench (python, nodejs)
+###############################################
+# Base Image
+###############################################
+# https://github.com/frappe/frappe_docker/blob/main/images/bench/Dockerfile
+# `frappe/bench` use `debian:bookworm-slim` as a base image
+# then it install dependencies for bench (python, nodejs).
+FROM frappe/bench:latest
+
 
 ###############################################
-# ARG
+# Args
 ###############################################
-ARG adminPass=12345
-ARG mysqlPass=12345
-ARG pythonVersion=python3
-ARG appBranch=version-16
+ARG APP_BRANCH=version-16
+ARG FRAPPE_REPO="https://github.com/frappe/frappe"
+ARG ERPNEXT_REPO="https://github.com/frappe/erpnext"
+# These are just development default value,
+# it won't be used in production.
+ARG ADMIN_PASS=12345
+ARG MARIADB_PASS=12345
+ARG SITE_NAME=site1.local
+
 
 ###############################################
 # ENV 
 ###############################################
 # https://docs.frappe.io/framework/user/en/installation
-ENV \
-    # [Note] frappe user has been set from frappe/bench image
-    systemUser=frappe \
-    # Dependencies version
-    # https://github.com/frappe/frappe_docker/blob/bc254c2b4ceb9d01dbdd598ace2053326120d27f/overrides/compose.mariadb.yaml#L11
-    # https://github.com/frappe/frappe_docker/blob/bc254c2b4ceb9d01dbdd598ace2053326120d27f/docs/02-setup/05-overrides.md?plain=1#L9-L13
-    mariadbVersion=11.8 \
-    # Frappe Related
-    benchPath=bench-repo \
-    benchFolderName=bench \
-    benchRepo="https://github.com/frappe/bench" \
-    # [Note] Some how bench use v5.x as Master and Master didn't get the updates
-    # Updated: 2026-01-19, This is still the case, master branch is gone now, use v5.x instead
-    # https://github.com/frappe/bench/pull/1270
-    benchBranch=v5.x \
-    frappeRepo="https://github.com/frappe/frappe" \
-    erpnextRepo="https://github.com/frappe/erpnext" \
-    siteName=site1.local
+# ---
+# https://github.com/frappe/frappe_docker/blob/bc254c2b4ceb9d01dbdd598ace2053326120d27f/overrides/compose.mariadb.yaml#L11
+# https://github.com/frappe/frappe_docker/blob/bc254c2b4ceb9d01dbdd598ace2053326120d27f/docs/02-setup/05-overrides.md?plain=1#L9-L13
+ENV MARIADB_VERSION=11.8
+
 
 ###############################################
 # Config File
 ###############################################
 # MariaDB config
-COPY ./mariadb.cnf /home/$systemUser/mariadb.cnf
+COPY --chown=frappe ./mariadb.cnf /home/frappe/mariadb.cnf
 # image entrypoint
-COPY --chown=1000:1000 ./entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY --chown=frappe --chmod=0755 ./entrypoint.sh /usr/local/bin/entrypoint.sh
 
-# set entrypoint permission
-## prevent: docker Error response from daemon OCI runtime create failed starting container process caused "permission denied" unknown
-RUN sudo chmod +x /usr/local/bin/entrypoint.sh
 
 ###############################################
 # Install Dependencies
@@ -62,7 +55,7 @@ RUN sudo apt-get update \
     && sudo apt-get install -y -q apt-transport-https curl \
     && sudo mkdir -p /etc/apt/keyrings \
     && sudo curl -o /etc/apt/keyrings/mariadb-keyring.pgp "https://mariadb.org/mariadb_release_signing_key.pgp" \
-    && echo "deb [signed-by=/etc/apt/keyrings/mariadb-keyring.pgp] https://mirror.kku.ac.th/mariadb/repo/${mariadbVersion}/debian bookworm main" | sudo tee /etc/apt/sources.list.d/mariadb.list \
+    && echo "deb [signed-by=/etc/apt/keyrings/mariadb-keyring.pgp] https://mirror.kku.ac.th/mariadb/repo/${MARIADB_VERSION}/debian bookworm main" | sudo tee /etc/apt/sources.list.d/mariadb.list \
     && sudo apt-get update \
     && sudo apt-get install -y -q \
     mariadb-server \
@@ -94,38 +87,35 @@ RUN sudo apt-get update \
     # Init Bench & Setup Site
     ###############################################
     # copy MariaDB Config
-    && sudo cp /home/$systemUser/mariadb.cnf /etc/mysql/mariadb.cnf \
+    && sudo cp /home/frappe/mariadb.cnf /etc/mysql/mariadb.cnf \
     && sudo service mariadb start \
-    && sudo mariadb --user="root" --password="${mysqlPass}" --execute="ALTER USER 'root'@'localhost' IDENTIFIED BY '${mysqlPass}';" \
+    && sudo mariadb --user="root" --password="${MARIADB_PASS}" --execute="ALTER USER 'root'@'localhost' IDENTIFIED BY '${MARIADB_PASS}';" \
     # start redis service
     && sudo redis-server --port 11000 --daemonize yes \
     ###############################################
     # Init Bench
     ###############################################
-    && bench init $benchFolderName --frappe-path $frappeRepo --frappe-branch $appBranch --python $pythonVersion \
+    && bench init frappe-bench --frappe-path $FRAPPE_REPO --frappe-branch $APP_BRANCH \
     # cd into bench folder
-    && cd $benchFolderName \
+    && cd frappe-bench \
     # install erpnext
-    && bench get-app erpnext $erpnextRepo --branch $appBranch \
+    && bench get-app erpnext $ERPNEXT_REPO --branch $APP_BRANCH \
     # delete temp file
     && sudo rm -rf /tmp/* \
     # start new site
-    && bench new-site $siteName \
-    --mariadb-root-password $mysqlPass  \
-    --admin-password $adminPass \
-    && bench --site $siteName install-app erpnext \
+    && bench new-site $SITE_NAME \
+    --mariadb-root-password $MARIADB_PASS  \
+    --admin-password $ADMIN_PASS \
+    && bench --site $SITE_NAME install-app erpnext \
     # use site
-    && bench use $siteName \
-    # compile all python file
-    ## the reason for not using python3 -m compileall -q /home/$systemUser/$benchFolderName/apps
-    ## is to ignore frappe/node_modules folder since it will cause syntax error
-    && $pythonVersion -m compileall -q /home/$systemUser/$benchFolderName/apps/frappe/frappe \
-    && $pythonVersion -m compileall -q /home/$systemUser/$benchFolderName/apps/erpnext/erpnext
+    && bench use $SITE_NAME
+
 
 ###############################################
 # WORKDIR
 ###############################################
-WORKDIR /home/$systemUser/$benchFolderName
+WORKDIR /home/frappe/frappe-bench
+
 
 ###############################################
 # FINALIZED

@@ -44,7 +44,7 @@ jobs:
           load: true
           tags: ${{ env.IMAGE_ACTION_TAG }}
           build-args: |
-            appBranch=${{ matrix.app_branch }}
+            APP_BRANCH=${{ matrix.app_branch }}
 
       - name: Start container
         run: |
