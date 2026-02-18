@@ -25,7 +25,7 @@ This setup is designed for users who want to explore the system and is not suita
 ```sh
 docker pull pipech/erpnext-docker-debian:version-15-latest
 
-docker run -d -p 8000:8000 -p 9000:9000 -p 3306:3306 pipech/erpnext-docker-debian:version-15-latest
+docker run -d -p 8000:8000 -p 9000:9000 -p 3306:3306 pipech/erpnext-docker-debian:version-16-latest
 ```
 
 The site should be available at http://localhost:8000 after 1-2 minutes.

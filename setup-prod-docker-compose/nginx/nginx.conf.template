@@ -11,9 +11,16 @@ server {
   server_name ${DFP_DOMAIN_NAME};
   root /home/frappe/bench/sites;
 
+  # Healthcheck path
+  location /nginx-healthcheck {
+    access_log off;
+    return 200 "ok";
+    add_header Content-Type text/plain;
+  }
+
   # Serve asset
   location /assets/ {
-    root /usr/share/nginx/assets/;
+    root /usr/share/nginx/;
     try_files $uri =404;
   }
 

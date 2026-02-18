@@ -1,4 +1,9 @@
 FROM frappe-image AS assets
+
+# Copy files, follows symlinks and copies real files
+RUN cp -rL /home/frappe/frappe-bench/assets /home/frappe/assets
+
 FROM nginx:1.29
 
-COPY --from=assets /home/frappe/frappe-bench/sites/assets /usr/share/nginx/sites/assets
+COPY --from=assets /home/frappe/assets /usr/share/nginx/assets
+COPY ./nginx.conf.template /etc/nginx/templates/default.conf.template

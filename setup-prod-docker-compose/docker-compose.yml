@@ -3,10 +3,12 @@ x-frappe-base: &frappe-base
     context: ./frappe
     dockerfile: Dockerfile
   restart: unless-stopped
+  working_dir: /home/frappe/frappe-bench
   env_file: .env
+  user: frappe
   volumes:
-    - frappe-sites-data:/home/frappe/bench/sites
-    - frappe-logs-data:/home/frappe/bench/logs
+    - frappe-sites-data:/home/frappe/frappe-bench/sites
+    - frappe-logs-data:/home/frappe/frappe-bench/logs
   networks:
     - bench-network
   depends_on:
@@ -22,8 +24,8 @@ x-redis: &redis
   restart: unless-stopped
   healthcheck:
     test: ["CMD", "redis-cli", "--raw", "incr", "ping_test"]
-    start_period: 5s
-    interval: 5s
+    start_period: 15s
+    interval: 30s
     timeout: 5s
     retries: 5
   networks:
@@ -32,12 +34,35 @@ x-redis: &redis
 services:
   fp-web:
     <<: *frappe-base
+    command:
+      - /home/frappe/frappe-bench/env/bin/gunicorn
+      - --chdir=/home/frappe/frappe-bench/sites
+      - --bind=0.0.0.0:8000
+      - --threads=4
+      - --workers=2
+      - --worker-class=gthread
+      - --worker-tmp-dir=/dev/shm
+      - --timeout=120
+      - --preload
+      - frappe.app:application
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8000"]
+      start_period: 15s
+      interval: 30s
+      timeout: 5s
+      retries: 5
 
   fp-websocket:
     <<: *frappe-base
     command:
       - node
       - /home/frappe/frappe-bench/apps/frappe/socketio.js
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:9000"]
+      start_period: 15s
+      interval: 30s
+      timeout: 5s
+      retries: 5
 
   fp-worker-short:
     <<: *frappe-base
@@ -74,15 +99,21 @@ services:
       context: ./nginx
       dockerfile: Dockerfile
       additional_contexts:
-        frappe-image: "service:fp-web"
+        frappe-image: service:fp-web
     restart: unless-stopped
     env_file: .env
     ports:
       - "80:80"
     volumes:
-      - frappe-sites-data:/home/frappe/bench/sites
-      - ./nginx.conf.template:/etc/nginx/templates/default.conf.template
-
+      - frappe-sites-data:/home/frappe/frappe-bench/sites
+    networks:
+      - bench-network
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost/nginx-healthcheck"]
+      start_period: 15s
+      interval: 30s
+      timeout: 5s
+      retries: 5
 
   fp-database:
     image: mariadb:11.8
@@ -93,14 +124,14 @@ services:
       - --skip-character-set-client-handshake
       - --skip-innodb-read-only-compressed
     environment:
-      MARIADB_ROOT_PASSWORD: ${RFP_DB_ROOT_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${DFP_DB_ROOT_PASSWORD}
       MARIADB_AUTO_UPGRADE: 1
     volumes:
       - mariadb-data:/var/lib/mysql
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
-      start_period: 5s
-      interval: 5s
+      start_period: 15s
+      interval: 30s
       timeout: 5s
       retries: 5
     networks:

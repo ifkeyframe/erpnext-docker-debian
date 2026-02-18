@@ -7,10 +7,14 @@
 FROM pipech/erpnext-docker-debian:version-16-latest AS builder
 
 RUN echo "-> Start builder" \
-    ### install your custom apps here
+    ## install your custom apps here
     # && bench get-app https://github.com/your-repo/custom_app
-    ### remove unused sites
-    && rm -rf /home/frappe/frappe-bench/sites/$SITE_NAME \
+    ## copy asset folder, this will be copied to nginx image
+    && cp -r /home/frappe/frappe-bench/sites/assets /home/frappe/frappe-bench/assets \
+    && cp /home/frappe/frappe-bench/sites/apps.txt /home/frappe/frappe-bench/apps.txt \
+    && cp /home/frappe/frappe-bench/sites/apps.json /home/frappe/frappe-bench/apps.json \
+    ## remove sites folder, we'll mount it as persistent volume
+    && rm -rf /home/frappe/frappe-bench/sites \
     && echo "-> Builder done!"
 
 
@@ -26,6 +30,8 @@ FROM frappe/bench:latest
 # Copied bench folder from build stage
 COPY --from=builder --chown=frappe:frappe /home/frappe/frappe-bench /home/frappe/frappe-bench
 
-ENTRYPOINT ["/usr/local/bin/railway-entrypoint.sh"]
+COPY --chmod=0755 ./entrypoint.sh /usr/local/bin/entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 EXPOSE 80
