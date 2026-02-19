@@ -31,6 +31,7 @@ FROM frappe/bench:latest
 COPY --from=builder --chown=frappe:frappe /home/frappe/frappe-bench /home/frappe/frappe-bench
 
 COPY --chmod=0755 ./entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY --chmod=0755 ./init.sh /usr/local/bin/init.sh
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
