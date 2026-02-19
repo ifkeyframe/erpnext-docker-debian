@@ -9,7 +9,7 @@ upstream bench-socketio {
 server {
   listen 80;
   server_name ${DFP_DOMAIN_NAME};
-  root /home/frappe/bench/sites;
+  root /home/frappe/frappe-bench/sites;
 
   # Healthcheck path
   location /nginx-healthcheck {
