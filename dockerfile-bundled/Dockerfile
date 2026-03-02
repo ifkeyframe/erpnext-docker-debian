@@ -1,10 +1,12 @@
 ###############################################
 # Base Image
 ###############################################
-# https://github.com/frappe/frappe_docker/blob/main/images/bench/Dockerfile
-# `frappe/bench` use `debian:bookworm-slim` as a base image
-# then it install dependencies for bench (python, nodejs).
-FROM frappe/bench:latest
+# https://github.com/frappe/frappe_docker/blob/main/images/production/Containerfile
+# `frappe/base` is built from `python:slim-bookworm` and includes:
+#   Python (system), Node (nvm), bench (pip3), nginx, wkhtmltopdf,
+#   mariadb-client, weasytprint deps, frappe user.
+# Default USER in this image is root.
+FROM frappe/base:version-16
 
 
 ###############################################
@@ -21,7 +23,7 @@ ARG SITE_NAME=site1.local
 
 
 ###############################################
-# ENV 
+# ENV
 ###############################################
 # https://docs.frappe.io/framework/user/en/installation
 # ---
@@ -42,73 +44,97 @@ COPY --chown=frappe --chmod=0755 ./entrypoint.sh /usr/local/bin/entrypoint.sh
 ###############################################
 # Install Dependencies
 ###############################################
-RUN sudo apt-get update \
-    && sudo apt-get install -y -q \
+RUN apt-get update \
+    && apt-get install -y -q \
     # [fix] "debconf: delaying package configuration, since apt-utils is not installed"
     apt-utils \
     # [fix] "debconf: unable to initialize frontend: Dialog"
     # https://github.com/moby/moby/issues/27988
-    && echo "debconf debconf/frontend select Noninteractive" | sudo debconf-set-selections \
+    && echo "debconf debconf/frontend select Noninteractive" | debconf-set-selections \
     ###############################################
-    # Install dependencies: MariaDB
+    # sudo (required by entrypoint.sh at runtime)
     ###############################################
-    && sudo apt-get install -y -q apt-transport-https curl \
-    && sudo mkdir -p /etc/apt/keyrings \
-    && sudo curl -o /etc/apt/keyrings/mariadb-keyring.pgp "https://mariadb.org/mariadb_release_signing_key.pgp" \
-    && echo "deb [signed-by=/etc/apt/keyrings/mariadb-keyring.pgp] https://mirror.kku.ac.th/mariadb/repo/${MARIADB_VERSION}/debian bookworm main" | sudo tee /etc/apt/sources.list.d/mariadb.list \
-    && sudo apt-get update \
-    && sudo apt-get install -y -q \
+    && apt-get install -y -q sudo \
+    && echo "frappe ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers \
+    ###############################################
+    # Build dependencies (needed for bench init to compile Python packages)
+    # These are in frappe/bench but NOT in frappe/base
+    ###############################################
+    && apt-get install -y -q \
+    build-essential \
+    gcc \
+    cron \
+    libffi-dev \
+    liblcms2-dev \
+    libldap2-dev \
+    libmariadb-dev \
+    libsasl2-dev \
+    libtiff5-dev \
+    libwebp-dev \
+    pkg-config \
+    libbz2-dev \
+    ###############################################
+    # Install dependencies: MariaDB server
+    # (mariadb-client is already in frappe/base)
+    ###############################################
+    && apt-get install -y -q apt-transport-https \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -o /etc/apt/keyrings/mariadb-keyring.pgp "https://mariadb.org/mariadb_release_signing_key.pgp" \
+    && echo "deb [signed-by=/etc/apt/keyrings/mariadb-keyring.pgp] https://mirror.kku.ac.th/mariadb/repo/${MARIADB_VERSION}/debian bookworm main" | tee /etc/apt/sources.list.d/mariadb.list \
+    && apt-get update \
+    && apt-get install -y -q \
     mariadb-server \
-    mariadb-client \
-    mariadb-common \
-    libmariadb3 \
     python3-mysqldb \
     ###############################################
     # Install dependencies: Redis
     ###############################################
-    && sudo apt-get install -y -q \
+    && apt-get install -y -q \
     redis-server \
     ###############################################
     # Install dependencies: supervisor
     ###############################################
-    && sudo apt-get install -y -q \
+    && apt-get install -y -q \
     supervisor \
-    ###############################################
-    # Install dependencies: nginx
-    ###############################################
-    && sudo apt-get install -y -q \
-    nginx \
     ###############################################
     # clean-up
     ###############################################
-    && sudo apt-get autoremove --purge -y \
-    && sudo apt-get clean -y \
+    && apt-get autoremove --purge -y \
+    && apt-get clean -y \
     ###############################################
     # Init Bench & Setup Site
     ###############################################
     # copy MariaDB Config
-    && sudo cp /home/frappe/mariadb.cnf /etc/mysql/mariadb.cnf \
-    && sudo service mariadb start \
-    && sudo mariadb --user="root" --password="${MARIADB_PASS}" --execute="ALTER USER 'root'@'localhost' IDENTIFIED BY '${MARIADB_PASS}';" \
+    && cp /home/frappe/mariadb.cnf /etc/mysql/mariadb.cnf \
+    && service mariadb start \
+    # root uses unix socket auth — no password needed to set the password
+    && mariadb --user="root" --execute="ALTER USER 'root'@'localhost' IDENTIFIED BY '${MARIADB_PASS}';" \
     # start redis service
-    && sudo redis-server --port 11000 --daemonize yes \
+    && redis-server --port 11000 --daemonize yes \
     ###############################################
-    # Init Bench
+    # Symlink node/yarn into /usr/local/bin so bench subprocesses can find them
+    # regardless of PATH restrictions (e.g. sudo secure_path)
     ###############################################
-    && bench init frappe-bench --frappe-path $FRAPPE_REPO --frappe-branch $APP_BRANCH \
-    # cd into bench folder
-    && cd frappe-bench \
-    # install erpnext
-    && bench get-app erpnext $ERPNEXT_REPO --branch $APP_BRANCH \
-    # delete temp file
-    && sudo rm -rf /tmp/* \
-    # start new site
-    && bench new-site $SITE_NAME \
-    --mariadb-root-password $MARIADB_PASS  \
-    --admin-password $ADMIN_PASS \
-    && bench --site $SITE_NAME install-app erpnext \
-    # use site
-    && bench use $SITE_NAME
+    && ln -sf "$(ls -d ${NVM_DIR}/versions/node/v*/bin/node | head -1)" /usr/local/bin/node \
+    && ln -sf "$(ls -d ${NVM_DIR}/versions/node/v*/bin/yarn | head -1)" /usr/local/bin/yarn \
+    ###############################################
+    # Init Bench (run as frappe user — bench creates files in /home/frappe)
+    ###############################################
+    && sudo -EH -u frappe bash -c " \
+        bench init /home/frappe/frappe-bench \
+            --frappe-path ${FRAPPE_REPO} \
+            --frappe-branch ${APP_BRANCH} \
+        && cd /home/frappe/frappe-bench \
+        && bench get-app erpnext ${ERPNEXT_REPO} --branch ${APP_BRANCH}" \
+    # delete temp files
+    && rm -rf /tmp/* \
+    # create site (run as frappe user)
+    && sudo -EH -u frappe bash -c " \
+        cd /home/frappe/frappe-bench \
+        && bench new-site ${SITE_NAME} \
+            --mariadb-root-password ${MARIADB_PASS} \
+            --admin-password ${ADMIN_PASS} \
+        && bench --site ${SITE_NAME} install-app erpnext \
+        && bench use ${SITE_NAME}"
 
 
 ###############################################
@@ -120,6 +146,8 @@ WORKDIR /home/frappe/frappe-bench
 ###############################################
 # FINALIZED
 ###############################################
+USER frappe
+
 # image entrypoint script
 CMD ["/usr/local/bin/entrypoint.sh"]
 
