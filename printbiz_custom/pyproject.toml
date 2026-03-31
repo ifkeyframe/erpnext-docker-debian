@@ -1,0 +1,9 @@
+[project]
+name = "printbiz_custom"
+version = "0.1.0"
+description = "Custom app for PrintBiz warehouse and production management"
+requires-python = ">=3.10"
+
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"

@@ -1,0 +1,2 @@
+# Patches — list of one-time migration scripts
+# Format: printbiz_custom.patches.patch_name
