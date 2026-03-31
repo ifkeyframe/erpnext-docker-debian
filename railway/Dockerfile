@@ -11,14 +11,19 @@ FROM pipech/erpnext-docker-debian:version-15-latest AS builder
 USER $systemUser
 WORKDIR /home/$systemUser/$benchFolderName
 
+### Copy printbiz_custom app
+COPY --chown=1000:1000 ./printbiz_custom /home/$systemUser/$benchFolderName/apps/printbiz_custom
+
 RUN echo "-> Start builder" \
     ### remove unused sites, created by base image
     && rm -rf /home/$systemUser/$benchFolderName/sites/site1.local \
     ### [HOTFIX] Railway used IPv6 (Does not support IPv4),  https://docs.railway.com/guides/private-networking#caveats
     ### https://github.com/frappe/frappe/issues/33981
     && sed -i 's/socket\.AF_INET, socket\.SOCK_STREAM/socket.AF_INET6, socket.SOCK_STREAM/g' /home/frappe/bench/apps/frappe/frappe/utils/connections.py \
-    ### install your custom apps here
-    # && bench get-app https://github.com/your-repo/custom_app
+    ### install printbiz_custom
+    && cd /home/$systemUser/$benchFolderName \
+    && pip install -e apps/printbiz_custom \
+    && echo "printbiz_custom" >> sites/apps.txt \
     && echo "-> Builder done!"
 
 

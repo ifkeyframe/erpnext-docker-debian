@@ -41,15 +41,10 @@ ENV \
 COPY ./mariadb.cnf /home/$systemUser/mariadb.cnf
 # image entrypoint
 COPY --chown=1000:1000 ./entrypoint.sh /usr/local/bin/entrypoint.sh
-# Railway entrypoint (external MariaDB/Redis)
-COPY --chown=1000:1000 ./entrypoint-railway.sh /usr/local/bin/entrypoint-railway.sh
-# Custom app (staged in /tmp, moved to bench/apps after bench init)
-COPY --chown=1000:1000 ./printbiz_custom /tmp/printbiz_custom
 
 # set entrypoint permission
 ## prevent: docker Error response from daemon OCI runtime create failed starting container process caused "permission denied" unknown
-RUN sudo chmod +x /usr/local/bin/entrypoint.sh \
-    && sudo chmod +x /usr/local/bin/entrypoint-railway.sh
+RUN sudo chmod +x /usr/local/bin/entrypoint.sh
 
 ###############################################
 # Install Dependencies
@@ -121,13 +116,6 @@ RUN sudo apt-get update \
     && bench --site $siteName install-app erpnext \
     # use site
     && bench use $siteName \
-    ###############################################
-    # Install printbiz_custom
-    ###############################################
-    && cp -r /tmp/printbiz_custom /home/$systemUser/$benchFolderName/apps/printbiz_custom \
-    && pip install -e /home/$systemUser/$benchFolderName/apps/printbiz_custom \
-    && echo "printbiz_custom" >> /home/$systemUser/$benchFolderName/sites/apps.txt \
-    && bench --site $siteName install-app printbiz_custom \
     # compile all python file
     ## the reason for not using python3 -m compileall -q /home/$systemUser/$benchFolderName/apps
     ## is to ignore frappe/node_modules folder since it will cause syntax error
